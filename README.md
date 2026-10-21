@@ -6,6 +6,66 @@ ProductPulse AI is an end-to-end Databricks project for a senior data engineerin
 
 The use case is inspired by real retail product feedback and support analytics patterns. All products, reviews, tickets, returns, orders, inventory snapshots, and PDF documents in this repository are synthetic.
 
+## Actual Execution Evidence
+
+The screenshots below capture this project running in Databricks: the data pipeline, the deployed Streamlit app, RAG routing and retrieved evidence, and conversation turns persisted in Lakebase. These are actual execution screenshots using the synthetic retail dataset described above.
+
+### 1. Databricks Daily Pipeline Running
+
+![Databricks job graph showing successful Bronze, Silver, and Gold tasks with Lakebase embedding sync still running](docs/images/runtime-evidence/databricks-pipeline-running.png)
+
+The **ProductPulse AI Daily Pipeline** job graph shows `ingest_raw_to_bronze` and `build_silver_chunks` succeeding, followed by two downstream branches: `build_gold_metrics` and `embed_and_sync_lakebase`. At capture time, Gold metrics had succeeded while embedding generation and Lakebase synchronization were still running on serverless compute. This captures the workflow in progress; the overall job status is **Running**.
+
+The run details also show 10 queries, 17,535 rows read, and 17,501 rows written at that point in execution. This connects the pipeline notebooks to an observed Databricks job run.
+
+### 2. Deployed Streamlit App Serving Structured Metrics
+
+![Streamlit app hosted on Databricks Apps displaying structured product metrics in the agent trace](docs/images/runtime-evidence/streamlit-structured-metrics.png)
+
+The browser shows the Streamlit interface hosted on Databricks Apps, with the agent trace's **Metrics** tab expanded. The visible `RUN-ULTRA-01` result covers August 14–20, 2026 and includes 168 reviews, 94 support tickets, 908 orders, 1,098 units sold, and 138 returns. Its `computed_return_rate` of `0.152` represents approximately **15.2%**, calculated by the metric tool as returns divided by orders.
+
+This demonstrates structured metric results reaching the deployed app through the project's Gold-table query path. The trace also exposes rating, sentiment, stock, and issue fields so users can inspect the data behind the answer.
+
+### 3. RAG Answer with Citations and Recommended Actions
+
+![Streamlit chat answering why customers are returning RUN-ULTRA-01 with evidence citations and next actions](docs/images/runtime-evidence/streamlit-rag-answer.png)
+
+The user asks, **“Why are customers returning RUN-ULTRA-01?”** The displayed answer links fit and sizing concerns to launch guidance and a support ticket, using numbered citations such as `[1]`–`[4]`. It then recommends actions for product, support, and operations teams, including clearer sizing content and monitoring returns and exchanges.
+
+This shows the user-facing RAG response: retrieved source material is synthesized into an explanation and operational next steps. The recommendations are the agent's interpretation of the synthetic evidence.
+
+### 4. Agent Route and Tool Plan for RAG with Memory
+
+![Agent route trace showing the rag_memory plan, Lakebase use, memory tools, and rewritten retrieval query](docs/images/runtime-evidence/agent-rag-memory-route.png)
+
+The **Route** tab reports execution mode `memory_rag_agent`, `Lakebase used: True`, and an LLM-planned `rag_memory` route. The tool plan enables `read_memory`, `rag_search`, and `write_memory`, while `query_metrics` and `write_durable_memory` are disabled for this question. The rewritten retrieval query is **“RUN-ULTRA-01 return reasons”**.
+
+This makes the agent's routing decision visible: the question is handled through source retrieval and conversation context, with a normal turn-memory write planned. Saving an explicit durable preference is a separate operation; this trace does not request one.
+
+### 5. Retrieved PDF Chunk and Retrieval Scores
+
+![Evidence trace showing a RUN-ULTRA-01 launch brief chunk with source metadata, vector distance, and rerank score](docs/images/runtime-evidence/retrieved-rag-evidence.png)
+
+The **Evidence** tab exposes a retrieved chunk from `run_ultra_01_launch_fit_brief.pdf`, identified as `PDF-RUN-ULTRA-LAUNCH-BRIEF` with source type `product_brief_pdf` and product `RUN-ULTRA-01`. The visible text discusses fit calibration, wide-foot sizing guidance, narrow toe boxes, numb toes, and support handling. Source metadata includes the filename, page count, and effective date.
+
+The trace also displays a vector `distance` of approximately `0.9408` and a `rerank_score` of `0.658104`. In this implementation, lower vector distance means closer semantic matches, while the reranker combines vector distance with keyword overlap and ranks higher scores first. These are retrieval signals, not answer-confidence percentages. The screenshot lets users inspect the source text supporting the response.
+
+### 6. First Conversation Turn Persisted in Lakebase
+
+![Lakebase public.conversation_memory table showing the first saved conversation turn and its metadata](docs/images/runtime-evidence/lakebase-conversation-memory-first-turn.png)
+
+The Lakebase table browser shows one row in `public.conversation_memory` in the `databricks_postgres` database. Visible fields include `memory_id`, a Streamlit `session_id`, `memory_type = conversation_turn`, `memory_text`, JSON metadata containing `source: agent_turn`, and a `created_at` timestamp.
+
+This is database-side evidence that a chat turn was persisted beyond the Streamlit display. The application stores a compact question-and-answer summary in this table; RAG document chunks and their embeddings live separately in `rag_chunks` in the same Lakebase database.
+
+### 7. Follow-Up Conversation Turn Persisted in the Same Session
+
+![Lakebase conversation_memory table showing the original return-reasons question and a support-action follow-up as two saved turns](docs/images/runtime-evidence/lakebase-conversation-memory-follow-up.png)
+
+The later table view contains two `conversation_turn` rows with matching visible Streamlit session prefixes. Their stored questions are **“Why are customers returning RUN-ULTRA-01?”** and **“What should the support agent do next?”**, each followed by an assistant-answer summary.
+
+Together with the first-row view, this shows conversation memory accumulating across turns in Lakebase. The agent can read recent rows for the current session to supply context for follow-up questions such as “next”; the screenshot directly demonstrates the persisted turns.
+
 ## Problem Statement
 
 Retail teams receive product feedback from many places:
